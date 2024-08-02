@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import wx,random,itertools
 
+#import PIL,drawsvg
+
 GRID_BORDER=10
 
 def str_complement(x):
@@ -67,9 +69,319 @@ def kolakoski(start_items=(1, 2), length=20):
 
     return list(itertools.islice(_kolakoski_gen(start_items), length))
 
+class HitomezashiDrawing:
+    def __init__(self):
+        pass
+    def set_gridcolor(self,color):
+        pass
+    def set_gridweight(self,weight):
+        pass
+    def set_stitchcolor(self,color):
+        pass
+    def set_stitchweight(self,weight):
+        pass
+    def set_fillcolor(self,number,color):
+        pass
+    def draw_grid(self):
+        pass
+    def draw_polyline(self,points):
+        pass
+    def draw_loop(self,points):
+        pass
+    def fill_square(self,color,x,y):
+        pass
+    def fill_polygon(self,color,points):
+        pass
+    def draw_all(self,
+                 grid_pen=None,
+                 stitch_pen=None,
+                 colors=None,
+                 polylines=[],
+                 cycles=[],
+                 fills=[]):
+        if grid_pen is not None:
+            self.set_gridcolor(grid_pen.GetColour())
+            self.set_gridweight(grid_pen.GetWidth())
+        self.set_stitchcolor(stitch_pen.GetColour())
+        self.set_stitchweight(stitch_pen.GetWidth())
+        if(colors is not None):
+            for i in range(len(colors)):
+                self.set_fillcolor(i,colors[i].GetColour())
+
+        if(colors is not None):
+            for x in range(len(fills)):
+                for y in range(len(fills[x])):
+                    self.fill_square(fills[x][y],x,y)
+            
+        if grid_pen is not None:
+            self.draw_grid()
+        for points in polylines:
+            self.draw_polyline(points)
+        for points in cycles:
+            self.draw_loop(points)
+
+class TikzDrawing(HitomezashiDrawing):
+    def __init__(self,filehandle,xsize,ysize):
+        self.filehandle=filehandle
+        self.xsize=xsize
+        self.ysize=ysize
+        self.gridweight=None
+        self.stitchweight=None
+
+    def set_gridcolor(self,color):
+        self.filehandle.write('\\definecolor{{HZgridlines}}{{RGB}}{{{},{},{}}}\n'.format(color.GetRed(),color.GetBlue(),color.GetGreen()))
+        
+    def set_gridweight(self,weight):
+        self.gridweight=weight
+        
+    def set_stitchcolor(self,color):
+        self.filehandle.write('\\definecolor{{HZstitches}}{{RGB}}{{{},{},{}}}\n'.format(color.GetRed(),color.GetBlue(),color.GetGreen()))
+
+    def set_stitchweight(self,weight):
+        self.gridweight=weight
+        
+    def set_fillcolor(self,number,color):
+        self.filehandle.write('\\definecolor{{HZfill{}}}{{RGB}}{{{},{},{}}}\n'.format(number,color.GetRed(),color.GetBlue(),color.GetGreen()))
+
+    def draw_grid(self):
+        if(self.gridweight is None):
+            self.filehandle.write('\\draw[very thin,HZgridlines] ')
+        else:
+            self.filehandle.write('\\draw[line width={:0.2f}pt,HZgridlines] '.format(0.2*self.gridweight))
+        self.filehandle.write('(-0.5,0.5) grid ({},-{});\n'.format(self.xsize-0.5,self.ysize-0.5))
+
+    def __draw_polyline_basic(self,points):        
+        if(self.stitchweight is None):
+            self.filehandle.write('\\draw[very thick,HZstitches] ')
+        else:
+            self.filehandle.write('\\draw[line width={:0.2f}pt,HZstitches] '.format(0.2*self.stitchweight))
+        self.filehandle.write("--".join(["({},{})".format(coord[0],-coord[1]) for coord in points]))
+
+    def draw_polyline(self,points):
+        self.__draw_polyline_basic(points)
+        self.filehandle.write(';\n')
+        
+    def draw_loop(self,points):
+        self.__draw_polyline_basic(points)
+        self.filehandle.write('--cycle;\n')
+
+    def fill_square(self,color,x,y):
+        self.filehandle.write('\\fill[color=HZfill{}] ({},-{}) rectangle ++(1,-1);\n'.format(color,x,y))
+    def fill_polygon(self,color,points):
+        self.filehandle.write('\\fill[color=HZfill{}] ')
+        self.filehandle.write("--".join(["({},{})".format(coord[0],-coord[1]) for coord in points]))
+        self.filehandle.write('--cycle;\n')
+
+class WXDrawing(HitomezashiDrawing):
+    def __init__(self,canvas,xsize,ysize):
+        self.dc = wx.PaintDC(canvas)
+        self.canvassize=self.dc.GetSize()
+        self.xsize=xsize
+        self.ysize=ysize
+        self.gridpen=wx.NullPen
+        self.stitchpen=wx.Pen(colour=wx.Colour("BLACK"),width=3)
+        self.fillcolors={}
+
+    def resize(self,x,y):
+        self.xsize=x
+        self.ysize=y
+        
+    def __scale_x(self,xvalue):
+        return int((xvalue+0.5)*(self.canvassize.x)/self.xsize)
+
+    def __scale_y(self,yvalue):
+        return int((yvalue+0.5)*(self.canvassize.y)/self.ysize)
+
+    def __xlength(self):
+        return int(self.canvassize.x/self.xsize)
+
+    def __ylength(self):
+        return int(self.canvassize.y/self.ysize)
+    
+    def __scale_point(self,point):
+        return [self.__scale_x(point[0]),self.__scale_y(point[1])]
+
+    def __scale_line(self,line):
+        return [self.__scale_x(line[0]),self.__scale_y(line[1]),
+                self.__scale_x(line[2]),self.__scale_y(line[3])]
+    
+    def set_gridcolor(self,color):
+        self.gridpen.SetColour(color)
+        
+    def set_gridweight(self,weight):
+        self.gridpen.SetWidth(weight)
+        
+    def set_stitchcolor(self,color):
+        self.stitchpen.SetColour(color)
+
+    def set_stitchweight(self,weight):
+        self.stitchpen.SetWidth(weight)
+        
+    def set_fillcolor(self,number,color):
+        self.fillcolors[number]=color
+
+    def draw_grid(self):
+        self.dc.SetBrush(wx.NullBrush)
+        self.dc.SetPen(self.gridpen)
+        lineList=[self.__scale_line([-0.5,i,self.xsize-0.5,i]) for i in range(self.ysize)] + [self.__scale_line([i,-0.5,i,self.xsize-0.5]) for i in range(self.xsize)]
+        self.dc.DrawLineList(lineList)
+
+    def draw_polyline(self,points):
+        self.dc.SetBrush(wx.NullBrush)
+        self.dc.SetPen(self.stitchpen)
+        self.dc.DrawLines([self.__scale_point(point) for point in points])
+
+    def draw_loop(self,points):
+        self.dc.SetBrush(wx.Brush(wx.Colour("WHITE"),wx.BRUSHSTYLE_TRANSPARENT))
+        self.dc.SetPen(self.stitchpen)
+        self.dc.DrawPolygon([self.__scale_point(point) for point in points])
 
 
+    def fill_square(self,color,x,y):
+        self.dc.SetPen(wx.NullPen)
+        self.dc.SetBrush(wx.Brush(self.fillcolors[color]))
+        self.dc.DrawRectangle(self.__scale_x(x),self.__scale_y(y),self.__xlength(),self.__ylength())
 
+    def fill_polygon(self,color,points):
+        self.dc.SetPen(wx.NullPen)
+        self.dc.SetBrush(wx.Brush(self.fillcolors[color]))
+        self.dc.DrawPolygon([self.__scale_point(point) for point in points])
+    
+class HitomezashiEngine:
+    def __init__(self,xstring="",ystring=""):
+        self.set_strings(xstring,ystring)
+        self.rebuild_structures()
+
+    def set_strings(self,xstring=None,ystring=None):
+        if xstring is not None:
+            self.x_bits=[int(i) for i in xstring]
+        if ystring is not None:
+            self.y_bits=[int(i) for i in ystring]
+
+    def rebuild_structures(self):
+        self.polylines=[]
+        self.cycles=[]
+        self.regions=[]
+
+        # From each point in the grid, propogate until the initial
+        # point is reached or an edge is crossed.
+        visited=[[False]*(len(self.y_bits)) for i in range(len(self.x_bits))]
+        for i in range(len(self.x_bits)):
+            for j in range(len(self.y_bits)):
+                if visited[i][j]:
+                    continue
+                current_polyline=[]
+                laststep_horiz=True
+                curx=i
+                cury=j
+                while ((curx>=0) and (cury>=0) and
+                       (curx<len(self.x_bits)) and (cury<len(self.y_bits))):
+                    visited[curx][cury]=True
+                    current_polyline.append((curx,cury))
+                    if laststep_horiz:
+                        cury=cury+(1 if self.x_bits[curx]==cury % 2 else -1)
+                    else:
+                        curx=curx+(1 if self.y_bits[cury]==curx % 2 else -1)
+                    laststep_horiz=not laststep_horiz
+                    if (curx==i) and (cury==j):
+                        break
+                if (curx != i) or (cury != j):
+                    curx=i
+                    cury=j
+                    laststep_horiz=False
+                    while ((curx>=0) and (cury>=0) and
+                           (curx<len(self.x_bits)) and
+                           (cury<len(self.y_bits))):
+                        if (curx != i) or (cury != j):
+                            visited[curx][cury]=True
+                            current_polyline.insert(0,(curx,cury))
+                        if laststep_horiz:
+                            cury=cury+(1 if self.x_bits[curx]==cury % 2 else -1)
+                        else:
+                            curx=curx+(1 if self.y_bits[cury]==curx % 2 else -1)
+                        laststep_horiz=not laststep_horiz
+                    if len(current_polyline)>1:
+                        self.polylines.append(current_polyline)
+                else:
+                    self.cycles.append(current_polyline)
+        # To have a sensible order for filling in regions, the cycles
+        # should appear from longest to shortest.
+        self.cycles.sort(key=len,reverse=True)
+
+        # Produce coloration rules for each individual cell
+        self.two_colors=[]
+        startcolor=0
+        for x in range(len(self.x_bits)-1):
+            startcolor = (startcolor+self.x_bits[x]+1) % 2
+            current_row=[startcolor]
+            current_color=startcolor
+            for y in range(1,len(self.y_bits)-1):
+                current_color=(current_color + self.y_bits[y]+x-1) % 2
+                current_row.append(current_color)
+            self.two_colors.append(current_row)
+
+        # Much faster, now that I use cycle raycasting!
+        self.enclave_colors=[[0]*(len(self.y_bits)-1) for i in range(len(self.x_bits)-1)]
+        for cycle in self.cycles:
+            leftpoint=min([x[0] for x in cycle])
+            rightpoint=max([x[0] for x in cycle])
+            toppoint=min([x[1] for x in cycle])
+            bottompoint=max([x[1] for x in cycle])
+            for x in range(leftpoint,rightpoint):
+                enclosure=0
+                for y in range(toppoint,bottompoint):
+                    for i in range(len(cycle)):
+                        if ((cycle[i]==(x,y) and cycle[i-1]==(x+1,y)) or
+                            (cycle[i]==(x+1,y) and cycle[i-1]==(x,y))):
+                            enclosure=(enclosure+1) % 2
+                    self.enclave_colors[x][y] = self.enclave_colors[x][y]+enclosure
+
+        # Finally, building the map of "regions". Work in progress!
+        touchCount={}
+
+        def touchCell(x,y):
+            s=str([x,y])
+            if s in touchCount:
+                touchCount[s]=touchCount[s]+1
+            else:
+                touchCount[s]=1
+
+        def onBorder(x,y):
+            return ((x==0) or (y==0) or
+                    (x==len(self.x_bits)-1) or
+                    (y==len(self.y_bits)-1))
+                
+        def nextBorderCell(x,y):
+            if (y==0) and (x<len(self.x_bits)-1):
+                return [x+1,0]
+            if (y<len(self.y_bits)-1) and (x==len(self.x_bits)-1):
+                return [x,y+1]
+            if (y==len(self.y_bits)-1) and (x>0):
+                return [x-1,y]
+            if (x==0):
+                return [x,y-1]
+
+        for i in range(len(self.x_bits)):
+            touchCell(i,0)
+            curX=i
+            curY=0
+            newRegion=[[i,0]]
+            
+            
+
+class HitomezashiCanvas(wx.Panel):
+    def __init__(self,parent,engine):
+        wx.Panel.__init__(self,parent)
+        self.SetBackgroundColour(wx.WHITE)
+        self.engine=engine
+        self.size=None
+
+    def scale_x(self,xvalue):
+        return int((xvalue+0.5)*(self.size.x)/(len(self.engine.x_bits)))
+
+    def scale_y(self,yvalue):
+        return int((yvalue+0.5)*(self.size.y)/(len(self.engine.y_bits)))
+        
 
 
 class BitStringValidator(wx.Validator):
@@ -97,15 +409,9 @@ class BitStringValidator(wx.Validator):
     def TransferToWindow(self):
          return True
 
-
     def TransferFromWindow(self):
          return True
    
-
-class ExplorerGrid(wx.Panel):
-    def __init__(self,parent):
-        wx.Panel.__init__(self,parent)
-        self.SetBackgroundColour(wx.WHITE)
 
 class PresetDialog(wx.Dialog):
     def __init__(self, parent):
@@ -127,8 +433,6 @@ class PresetDialog(wx.Dialog):
 class ExplorerFrame(wx.Frame):
     def __init__(self):
         super().__init__(parent=None, title="Hitomezashi Explorer",size=wx.Size(600,600))
-        self.x_string=""
-        self.y_string=""
         self.enclave_colors=None
         self.two_colors=None
   
@@ -143,17 +447,18 @@ class ExplorerFrame(wx.Frame):
             flag=wx.RIGHT,
             border=8)
         self.x_bitcode_field = wx.TextCtrl(self,validator=BitStringValidator(),value=randomword(5))
-        self.x_string=self.x_bitcode_field.GetValue()
         self.x_bitcode_field.Bind(wx.EVT_TEXT, self.evt_changed_bitstrings)
         y_bitstring_entries.Add(
             wx.StaticText(self,label="Horizontal-stitch bitcode: "),
             flag=wx.RIGHT,
             border=8)
         self.y_bitcode_field = wx.TextCtrl(self,validator=BitStringValidator(),value=randomword(5))
+        
         x_bitstring_entries.Add(self.x_bitcode_field,flag=wx.RIGHT | wx.EXPAND, border=10)
         self.y_bitcode_field.Bind(wx.EVT_TEXT, self.evt_changed_bitstrings)
-        self.y_string=self.y_bitcode_field.GetValue()
         y_bitstring_entries.Add(self.y_bitcode_field,flag=wx.RIGHT | wx.EXPAND, border=10, proportion=1)
+
+        self.engine=HitomezashiEngine(self.x_bitcode_field.GetValue(),self.y_bitcode_field.GetValue())
         x_bitstring_buttons = wx.BoxSizer(wx.HORIZONTAL)
         x_bitstring_dualize = wx.Button(self,label="Dualize")
         x_bitstring_reverse = wx.Button(self,label="Reverse")
@@ -180,10 +485,7 @@ class ExplorerFrame(wx.Frame):
                             flag=wx.ALL|wx.EXPAND)
         self.main_layout.Add(bitcode_presets_button,flag=wx.EXPAND)
 
-  
-
-        self.grid_display=ExplorerGrid(self)
-        self.grid_display.SetBackgroundColour('white')
+        self.grid_display=HitomezashiCanvas(self,self.engine)
         self.grid_display.Bind(wx.EVT_PAINT,self.evt_repaint_grid)
         self.grid_sizer=self.main_layout.Add(self.grid_display,5,wx.SHAPED|wx.ALL,border=10)
 
@@ -211,21 +513,21 @@ class ExplorerFrame(wx.Frame):
         gridrow.Add(self.grid_color)
         self.main_layout.Add(gridrow)
 
-        self.bg_color_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        bg_color_sizer = wx.BoxSizer(wx.HORIZONTAL)
   
         self.list_bgstyle = wx.ComboBox(self,value="None", choices=["None","Two colors","Enclave coloring"],style=wx.CB_DROPDOWN|wx.CB_READONLY)
         self.list_bgstyle.Bind(wx.EVT_COMBOBOX,self.evt_changed_colormode)
-        self.bg_color_sizer.Add(
+        bg_color_sizer.Add(
             wx.StaticText(self,label="Fill-color style: "),
             flag=wx.RIGHT|wx.TOP|wx.BOTTOM,
             border=8)
-        self.bg_color_sizer.Add(self.list_bgstyle)
+        bg_color_sizer.Add(self.list_bgstyle)
 
         self.bg_twocolor=[
             wx.ColourPickerCtrl(self,colour=wx.Colour("WHITE")),
             wx.ColourPickerCtrl(self,colour=wx.Colour("RED"))]
         for i in [0,1]:
-            self.bg_color_sizer.Add(self.bg_twocolor[i])
+            bg_color_sizer.Add(self.bg_twocolor[i])
             self.bg_twocolor[i].Bind(wx.EVT_COLOURPICKER_CHANGED,self.evt_refresh)
             self.bg_twocolor[i].Hide()
         self.bg_enclavecolor=[
@@ -241,13 +543,16 @@ class ExplorerFrame(wx.Frame):
             wx.ColourPickerCtrl(self,colour=wx.Colour("BLACK"),size=(34,34)),
         ]
         for i in range(10):
-            self.bg_color_sizer.Add(self.bg_enclavecolor[i])
-            print(self.bg_enclavecolor[i].GetSize())
+            bg_color_sizer.Add(self.bg_enclavecolor[i])
             self.bg_enclavecolor[i].Bind(wx.EVT_COLOURPICKER_CHANGED,self.evt_refresh)
             self.bg_enclavecolor[i].Hide()
 
 
-        self.main_layout.Add(self.bg_color_sizer)
+        self.main_layout.Add(bg_color_sizer)
+        
+        export_button = wx.Button(self,label="Export...")
+        export_button.Bind(wx.EVT_BUTTON,self.evt_export)
+        self.main_layout.Add(export_button)
   
         self.SetSizer(self.main_layout)
         self.Show()
@@ -269,6 +574,53 @@ class ExplorerFrame(wx.Frame):
         if self.y_bitcode_field.Validate():
             self.y_bitcode_field.SetValue(str_reverse(self.y_bitcode_field.GetValue()))
 
+    def evt_export(self,event):
+        try:
+            import PIL
+        except ImportError:
+            PIL = None
+        try:
+            import drawsvg
+        except ImportError:
+            drawsvg = None
+        wildcards=["TikZ code (*.tex)|*.tex"]
+        if drawsvg is None:
+            print("Install drawsvg module for export to SVG")
+        else:
+            wildcards.insert(0,"SVG files (*.svg)|*.svg")
+        if PIL is None:
+            print("Install PIL module for export to graphics files")
+        else:
+            wildcards.insert(0,"Image files|*.bmp;*.gif;*.jpg;*.png")
+        with wx.FileDialog(self, "Export to file...",
+                           wildcard="|".join(wildcards),
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as fileDialog:
+            if fileDialog.ShowModal()==wx.ID_CANCEL:
+                return
+            if(wildcards[fileDialog.GetFilterIndex()]=="TikZ code (*.tex)|*.tex"):
+                # TikZ source
+                with open(fileDialog.GetPath(),"w") as f:
+                    tikzBuilder=TikzDrawing(f,len(self.engine.x_bits),len(self.engine.y_bits))
+                    grid_pen=wx.Pen(self.grid_color.GetColour()) if self.cb_grid_display.GetValue() else None;
+                    if(self.list_bgstyle.GetSelection()==1):
+                        colors=self.bg_twocolor
+                        fills=self.engine.two_colors
+                    elif(self.list_bgstyle.GetSelection()==2):
+                        colors=self.bg_enclavecolor
+                        fills=self.engine.enclave_colors
+                    else:
+                        colors=None
+                        fills=[]
+                    tikzBuilder.draw_all(
+                        grid_pen=grid_pen,
+                        stitch_pen=wx.Pen(self.stitchcolor.GetColour(),width=self.stitchweight.GetValue()),
+                        colors=colors,
+                        polylines=self.engine.polylines,
+                        cycles=self.engine.cycles,
+                        fills=fills);
+            elif(wildcards[fileDialog.GetFilterIndex()]=="Image files|*.bmp;*.gif;*.jpg;*.png"):
+                pass
+        
     def evt_gridcontrols(self,event):
         if(self.cb_grid_display.GetValue()):
             self.grid_color.Show()
@@ -305,21 +657,14 @@ class ExplorerFrame(wx.Frame):
             elif ychoice=="Random":
                 self.y_bitcode_field.SetValue(randomword(dialog.preset_spinners[1].GetValue()))
 
-
-
     def evt_refresh(self,event):
         self.grid_display.Refresh()
 
     def evt_changed_bitstrings(self,event):
         if(self.x_bitcode_field.Validate() and self.y_bitcode_field.Validate()):
-            self.x_string=self.x_bitcode_field.GetValue()
-            self.y_string=self.y_bitcode_field.GetValue()
-
-            self.enclave_colors=None
-            self.two_colors=None
-            if(len(self.x_string)>1 and len(self.y_string)>1):
-                self.rebuild_colortables()
-                self.resize_grid()
+            self.engine.set_strings(self.x_bitcode_field.GetValue(),self.y_bitcode_field.GetValue())
+            self.engine.rebuild_structures()
+            self.resize_grid()
             self.grid_display.Refresh()
 
     def evt_changed_colormode(self,event):
@@ -336,135 +681,32 @@ class ExplorerFrame(wx.Frame):
             for i in range(10):
                 self.bg_enclavecolor[i].Hide()
         self.Layout()
-        self.rebuild_colortables()
         self.grid_display.Refresh()
 
-
-    def rebuild_colortables(self):
-        self.two_colors=[[0]*(len(self.y_string)-1) for i in range(len(self.x_string)-1)]
-        for x in range(len(self.x_string)-1):
-            for y in range(len(self.y_string)-1):
-                crossings=0
-                for i in range(x+1):
-                    crossings+=(self.x_string[i]=="0")
-                for i in range(1,y+1):
-                    crossings+=(1-(self.y_string[i]=="0")-x-y)%2
-                self.two_colors[x][y]=crossings % 2
-
-        # Only rebuild enclave colors if we have to (it can be very
-        # computationally intensive)
-        if (self.list_bgstyle.GetSelection()==2) and self.enclave_colors is None:
-            INFINITY=len(self.x_string)*len(self.y_string);
-
-            # Initialize all distances from border to "infinity"
-            self.enclave_colors=[[INFINITY]*(len(self.y_string)-1) for i in range(len(self.x_string)-1)]
-
-            def borderDistWrapper(x,y):
-                if(x<0 or x>=len(self.x_string)-1):
-                    return INFINITY
-                if(y<0 or y>=len(self.y_string)-1):
-                    return INFINITY
-                return self.enclave_colors[x][y]
-
-            # Seed the open edges with zeroes and ones
-            curColor=0
-            for i in range(len(self.x_string)-2):
-                if (i%2 != int(self.y_string[0])):
-                    self.enclave_colors[i][0]=curColor
-                if False:
-                    if (int(self.x_string[i+1])==0):
-                        curColor = 1-curColor
-            for i in range(len(self.y_string)-2):
-                if (i%2 != int(self.x_string[len(self.x_string)-1])):
-                    self.enclave_colors[len(self.x_string)-2][i]=curColor
-                if False:
-                    if (int(self.y_string[i+1])==len(self.x_string)%2):
-                        curColor = 1-curColor
-            for i in range(len(self.x_string)-2,0,-1):
-                if (i%2 != int(self.y_string[len(self.y_string)-1])):
-                    self.enclave_colors[i][len(self.y_string)-2]=curColor
-                if False:
-                    if (int(self.x_string[i])==len(self.y_string)%2):
-                        curColor = 1-curColor
-            for i in range(len(self.y_string)-2,0,-1):
-                if (i%2 != int(self.x_string[0])):
-                    self.enclave_colors[0][i]=curColor
-                if False:
-                    if (int(self.y_string[i])==0):
-                        curColor = 1-curColor
-
-            # This is definitely not even remotely the most efficient way to
-            # do it, but it works.
-            changesMade=True
-            while(changesMade):
-                changesMade=False
-                for x in range(0,len(self.x_string)-1):
-                    for y in range(0,len(self.y_string)-1):
-                        probe=min(
-                            borderDistWrapper(x,y+1)+1-((int(self.y_string[y+1])-x)%2),
-                            borderDistWrapper(x+1,y)+1-((int(self.x_string[x+1])-y)%2),
-                            borderDistWrapper(x,y-1)+1-((int(self.y_string[y])-x)%2),
-                            borderDistWrapper(x-1,y)+1-((int(self.x_string[x])-y)%2)
-                        )
-                        if probe<self.enclave_colors[x][y]:
-                            changesMade=True
-                            self.enclave_colors[x][y]=probe
-  
     def resize_grid(self):
         size=self.grid_display.GetSize()
-        self.grid_sizer.SetRatio(((float) (len(self.x_string)-1))/(len(self.y_string)-1))
+        self.grid_sizer.SetRatio(((float) (len(self.engine.x_bits)-1))/(len(self.engine.y_bits)-1))
         self.main_layout.Layout()
   
     def evt_repaint_grid(self,event):
-        dc = wx.PaintDC(self.grid_display)
-        (xMax,yMax)=dc.GetSize()
-        xMax=xMax-2*GRID_BORDER-1
-        yMax=yMax-2*GRID_BORDER-1
-        if(len(self.x_string)<2 or len(self.y_string)<2):
-            return
-
-
-        # Color in all squares using two-color mode
-        dc.SetPen(wx.NullPen)
+        gridBuilder=WXDrawing(self.grid_display,len(self.engine.x_bits),len(self.engine.y_bits))
+        grid_pen=wx.Pen(self.grid_color.GetColour()) if self.cb_grid_display.GetValue() else None;
         if(self.list_bgstyle.GetSelection()==1):
-            brushes=[wx.Brush(self.bg_twocolor[i].GetColour()) for i in [0,1]]
-            for x in range(len(self.x_string)-1):
-                for y in range(len(self.y_string)-1):
-                    dc.SetBrush(brushes[self.two_colors[x][y]])
-                    dc.DrawRectangle(int(GRID_BORDER+xMax*x/(len(self.x_string)-1))-1,int(GRID_BORDER+yMax*y/(len(self.y_string)-1))-1,int(xMax/(len(self.x_string)-1))+2,int(yMax/(len(self.y_string)-1))+2)
-
-        # Color in all squares using enclave mode
+            colors=self.bg_twocolor
+            fills=self.engine.two_colors
         elif(self.list_bgstyle.GetSelection()==2):
-            brushes=[wx.Brush(self.bg_enclavecolor[i].GetColour()) for i in range(9)]
-            for x in range(len(self.x_string)-1):
-                for y in range(len(self.y_string)-1):
-                    dc.SetBrush(brushes[self.enclave_colors[x][y] % 10])
-                    dc.DrawRectangle(int(GRID_BORDER+xMax*x/(len(self.x_string)-1))-1,int(GRID_BORDER+yMax*y/(len(self.y_string)-1))-1,int(xMax/(len(self.x_string)-1))+2,int(yMax/(len(self.y_string)-1))+2)
-              
-        # Draw gridlines
-        dc.SetBrush(wx.NullBrush)
-        if(self.cb_grid_display.GetValue()):
-            dc.SetPen(wx.Pen(self.grid_color.GetColour()))
-            for i in range(len(self.x_string)):
-                dc.DrawLine(GRID_BORDER+int(xMax*i/(len(self.x_string)-1)),GRID_BORDER,GRID_BORDER+int(xMax*i/(len(self.x_string)-1)),GRID_BORDER+yMax)
-            for i in range(len(self.y_string)):
-                dc.DrawLine(GRID_BORDER,GRID_BORDER+int(yMax*i/(len(self.y_string)-1)),GRID_BORDER+xMax,GRID_BORDER+int(yMax*i/(len(self.y_string)-1)))
-
-        # Draw stitches
-        dc.SetPen(wx.Pen(self.stitchcolor.GetColour(),width=self.stitchweight.GetValue()))
-        for i in range(len(self.x_string)):
-            dashon=(self.x_string[i]=="0")
-            for j in range(len(self.y_string)-1):
-                if dashon:
-                    dc.DrawLine(GRID_BORDER+int(xMax*i/(len(self.x_string)-1)),GRID_BORDER+int(yMax*j/(len(self.y_string)-1)),GRID_BORDER+int(xMax*i/(len(self.x_string)-1)),GRID_BORDER+int(yMax*(j+1)/(len(self.y_string)-1)))
-                dashon=not dashon
-        for i in range(len(self.y_string)):
-            dashon=(self.y_string[i]=="0")
-            for j in range(len(self.x_string)-1):
-                if dashon:
-                    dc.DrawLine(GRID_BORDER+int(xMax*j/(len(self.x_string)-1)),GRID_BORDER+int(yMax*i/(len(self.y_string)-1)),GRID_BORDER+int(xMax*(j+1)/(len(self.x_string)-1)),GRID_BORDER+int(yMax*i/(len(self.y_string)-1)))
-                dashon=not dashon
-
+            colors=self.bg_enclavecolor
+            fills=self.engine.enclave_colors
+        else:
+            colors=None
+            fills=[]
+        gridBuilder.draw_all(
+            grid_pen=grid_pen,
+            stitch_pen=wx.Pen(self.stitchcolor.GetColour(),width=self.stitchweight.GetValue()),
+            colors=colors,
+            polylines=self.engine.polylines,
+            cycles=self.engine.cycles,
+            fills=fills);
   
 if __name__ == '__main__':
     app = wx.App()
