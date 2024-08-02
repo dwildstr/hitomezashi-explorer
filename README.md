@@ -19,9 +19,8 @@ Hitomezashi is a form of embroidery where equally spaced vertical and horizontal
 
 ## TODO
 
-* Add an export to PNG, SVG, and TikZ source code feature
+* Add PNG and SVG export capabilities
 * Fix the preset dialog (which goes weird from the second instantiation on)
-* Make enclave-depth calculation more efficient
 
 ## Warnings
 
